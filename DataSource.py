@@ -46,6 +46,10 @@ class MockSignal(DataSource):
         self.num_channels = num_channels
         self.current_time = 0
         self.dc_offsets = np.random.uniform(-500, 500, (num_channels, 1))
+        
+        self.queue = queue.Queue(maxsize=10)
+        self.stop_event = threading.Event()
+        self.thread = None
 
     def get_data(self, num_samples: int):
         t = np.arange(num_samples) / self.sample_rate + self.current_time
@@ -64,10 +68,28 @@ class MockSignal(DataSource):
     def get_num_channels(self):
         return self.num_channels
 
-    def data_stream(self, num_samples_per_read: int = 100):
-        while True:
-            yield self.get_data(num_samples_per_read)
+    def _producer(self, num_samples_per_read):
+        while not self.stop_event.is_set():
+            data = self.get_data(num_samples_per_read)
+            self.queue.put(data) # Blocks if queue is full
             time.sleep(num_samples_per_read / self.sample_rate)
+
+    def data_stream(self, num_samples_per_read: int = 100):
+        if self.thread is None or not self.thread.is_alive():
+            self.stop_event.clear()
+            self.thread = threading.Thread(target=self._producer, args=(num_samples_per_read,), daemon=True)
+            self.thread.start()
+            
+        while True:
+            try:
+                yield self.queue.get_nowait()
+            except queue.Empty:
+                yield None
+
+    def close(self):
+        self.stop_event.set()
+        if self.thread:
+            self.thread.join(timeout=0.1)
 
 
 class NIDAQ(DataSource):
@@ -134,31 +156,3 @@ class NIDAQ(DataSource):
             
     def close(self):
         self.task.close()
-
-class ThreadedGenerator:
-    """
-    Wraps a generator in a separate thread to prevent blocking the main UI thread.
-    """
-    def __init__(self, generator, max_queue_size=10):
-        self.queue = queue.Queue(maxsize=max_queue_size)
-        self.generator = generator
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
-
-    def _run(self):
-        for item in self.generator:
-            self.queue.put(item) # Blocks if queue is full, keeping memory usage low
-        self.queue.put(StopIteration)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        try:
-            # Get data from queue without blocking. If empty, return None.
-            item = self.queue.get_nowait()
-            if item is StopIteration:
-                raise StopIteration
-            return item
-        except queue.Empty:
-            return None
