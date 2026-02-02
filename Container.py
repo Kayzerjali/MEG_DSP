@@ -8,6 +8,7 @@ class Container():
         # maps the provider name to a tuple containing the provider init and the bool which indicates if provider is singlton, i.e. there should only be one instance 
         self._providers: dict[str, tuple[Callable[[], Any], bool]] = {}
         self._singletons: dict[str, Any] = {}
+        self._instances: dict[str, Any] = {}
     
     def register(self, name: str, provider: Callable[[], Any], singleton: bool = False) -> None:
         self._providers[name] = (provider, singleton) # add the provider to the dict under the name
@@ -23,8 +24,16 @@ class Container():
         # At this point we know there exists provider for name
         provider, singleton = self._providers[name] # retrive provider from dict
         instance = provider()
+        self._instances[name] = instance # add instance to dict
 
         if singleton:
             self._singletons[name] = instance
         
         return instance
+    
+    def get_instance(self, name: str) -> Any:
+        if name in self._instances:
+            return self._instances[name]
+        
+        else:
+            raise ValueError(f"Instance for {name} not found, try resolving it first.")

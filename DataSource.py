@@ -6,7 +6,6 @@ import time
 import threading
 import queue
 
-import Filter
 
 
 
@@ -20,6 +19,8 @@ class DataSource():
     def data_stream(self):
         pass
     def close(self):
+        pass
+    def set_axis(self, axis: str):
         pass
 
 class MockText(DataSource):
@@ -68,6 +69,9 @@ class MockSignal(DataSource):
     def get_num_channels(self):
         return self.num_channels
 
+    def set_axis(self, axis: str):
+        print(f"MockSignal: Axis switched to {axis} (Simulated)")
+
     def _producer(self, num_samples_per_read):
         while not self.stop_event.is_set():
             data = self.get_data(num_samples_per_read)
@@ -96,8 +100,9 @@ class NIDAQ(DataSource):
 
     def __init__(self, sample_rate : int = 1000, axis : Literal["x", "y", "z"] = "x"):
         
-        self.task = nidaqmx.Task()
+        self.task = None
         self.sample_rate = sample_rate
+        self.lock = threading.Lock()
         self.set_axis(axis) # set_axis initialises the self.task variable with the correct channels and sample rate
         
     
@@ -109,19 +114,20 @@ class NIDAQ(DataSource):
         :type axis: Literal["x", "y", "z"]
         """
         # can be called while task is running so have to close current task and reinitalise with new axis
-        if self.task:
-            self.task.close()
+        with self.lock:
+            if self.task:
+                self.task.close()
 
-        self.task = nidaqmx.Task()
-        if axis == "x":
-            self.channels = ["Dev1/ai0", "Dev1/ai3"]
-        elif axis == "y":
-            self.channels = ["Dev1/ai1", "Dev1/ai4"]
-        elif axis == "z":
-            self.channels = ["Dev1/ai2", "Dev1/ai5"]
-        
-        self.task.ai_channels.add_ai_voltage_chan(", ".join(self.channels))
-        self.task.timing.cfg_samp_clk_timing(rate = self.sample_rate, sample_mode=AcquisitionType.CONTINUOUS)
+            self.task = nidaqmx.Task()
+            if axis == "x":
+                self.channels = ["Dev1/ai0", "Dev1/ai3"]
+            elif axis == "y":
+                self.channels = ["Dev1/ai1", "Dev1/ai4"]
+            elif axis == "z":
+                self.channels = ["Dev1/ai2", "Dev1/ai5"]
+            
+            self.task.ai_channels.add_ai_voltage_chan(", ".join(self.channels))
+            self.task.timing.cfg_samp_clk_timing(rate = self.sample_rate, sample_mode=AcquisitionType.CONTINUOUS)
 
     def get_data(self, num_samples: int = 1):
         """
@@ -131,7 +137,8 @@ class NIDAQ(DataSource):
         :param num_samples: Description
         :type num_samples: int
         """
-        data = self.task.read(num_samples)
+        with self.lock:
+            data = self.task.read(num_samples)  # type: ignore
         data = np.array(data)
         data = (data/2.7) * 1000 # voltage to pT conversion (assuming 2.7 V/nT)
 
@@ -143,7 +150,7 @@ class NIDAQ(DataSource):
     def get_num_channels(self):
         return len(self.channels)
 
-    def stream(self, num_samples_per_read: int = 100): 
+    def data_stream(self, num_samples_per_read: int = 100): 
         """
         Creates a generator object yielding data. This can be assigned to a variable. 
         
@@ -155,4 +162,4 @@ class NIDAQ(DataSource):
 
             
     def close(self):
-        self.task.close()
+        self.task.close() # type: ignore 

@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import deque
 import numpy as np
+from typing import Literal
+
 
 
 
@@ -10,7 +12,7 @@ import numpy as np
 
 class DynamicDisplay():
 
-    def __init__(self,):
+    def __init__(self):
         """
 
         :param data_generator: A data generator
@@ -29,7 +31,9 @@ class TimeDomain(DynamicDisplay):
         self.ax = ax
         self.num_points = int(sample_rate * time_window)
         self.deque_list = [deque(np.zeros(self.num_points), maxlen=self.num_points) for _ in range(num_channels)]
-        
+        self.title = title # ensure title has format "base title : X Axis"
+
+
         t = np.arange(-self.num_points + 1, 1) / sample_rate
         self.lines = [self.ax.plot(t, np.zeros(self.num_points), label=f"Ch {i+1}")[0] for i in range(num_channels)]
         
@@ -44,6 +48,9 @@ class TimeDomain(DynamicDisplay):
             line.set_ydata(self.deque_list[i])
         return self.lines
 
+    def update_title_axis(self, axis):
+        base_title, _ = self.title.split(" : ")
+        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
 
 
 class FrequencyDomain(DynamicDisplay):
@@ -59,7 +66,7 @@ class FrequencyDomain(DynamicDisplay):
         self.num_points = int(sample_rate * time_window)
         self.freq_domain = np.fft.rfftfreq(self.num_points, 1/sample_rate)
         self.time_deques = [deque(np.zeros(self.num_points), maxlen=self.num_points) for _ in range(num_channels)]
-        
+        self.title = title # ensure title has format "base title : X Axis"
         self.lines = [self.ax.plot(self.freq_domain, np.zeros(self.freq_domain.size), label=f"Ch {i+1}")[0] for i in range(num_channels)]
         
         self.ax.set_title(title)
@@ -79,6 +86,10 @@ class FrequencyDomain(DynamicDisplay):
             line.set_ydata(y_fft[i])
         return self.lines
 
+    def update_title_axis(self, axis):
+        base_title, _ = self.title.split(" : ")
+        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
+
 
 class DisplayManager():
 
@@ -89,10 +100,10 @@ class DisplayManager():
 
         # Initialize the sub-managers with specific axes
         self.plots = [
-            TimeDomain(self.axes[0, 0], title="Raw Time Domain"),
-            FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain"),
-            TimeDomain(self.axes[1, 0], title="Filtered Time Domain"),
-            FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain")
+            TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis"),
+            FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis"),
+            TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis"),
+            FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain : X Axis")
         ]
         
         self.fig.tight_layout()
@@ -114,3 +125,10 @@ class DisplayManager():
         all_lines.extend(self.plots[3].update(filt_data))
         
         return all_lines
+    
+    def change_title_axes(self, axis: Literal["x", "y", "z"]):
+        
+        for plot in self.plots:
+            plot.update_title_axis(axis)
+            
+        self.fig.canvas.draw_idle() # to force a redraw dispite blitting
