@@ -106,27 +106,44 @@ class FrequencyDomain(DynamicDisplay):
 
 
 class DisplayManager():
+    """
+    Takes a data generator which yields tuples of (raw_data, filtered_data) and displays them in a 2x2 grid of plots.
+    Before calling start(), use add_master_stream() to set the data generator.
 
-    def __init__(self, data_generator, blitting: bool = True):
+    """
+    def __init__(self, blitting: bool = False):
+        self.blitting = blitting
+        self.data_generator = None
         
+    def add_master_stream(self, data_generator):
+        self.data_generator = data_generator
+    
+    def set_blitting(self, blitting: bool):
+        self.blitting = blitting
+        
+    def start(self):
+
+        if self.data_generator is None:
+            raise ValueError("Data generator not set. Use add_master_stream() to set it before starting the display.")
         
         # Create a 2x2 grid in ONE window
         self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 8))
-        self.data_generator = data_generator
 
         # Initialize the sub-managers with specific axes
         self.plots = [
-            TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis", blitting=blitting),
-            FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis", blitting=blitting),
-            TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis", blitting=blitting),
-            FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain : X Axis", blitting=blitting)
+            TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis", blitting=self.blitting),
+            FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis", blitting=self.blitting),
+            TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis", blitting=self.blitting),
+            FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain : X Axis", blitting=self.blitting)
         ]
         
         self.fig.tight_layout()
         
         # ONE animation for all 4 plots
         self.anim = FuncAnimation(self.fig, self._main_update, frames=self.data_generator, 
-                                  interval=50, blit=blitting, cache_frame_data=False)
+                                  interval=50, blit=self.blitting, cache_frame_data=False)
+
+
 
     def _main_update(self, frame):
         if frame is None: return [line for p in self.plots for line in p.lines]

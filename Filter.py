@@ -100,7 +100,7 @@ class PCA(Filter):
             data = np.array(data).T # PCA function require (samples, channels)
 
             # Get components from PCA
-            components = self.pca.fit_transform(data) # consider use of IncrementalPCA if issues
+            components = self.pca.fit_transform(data)
             components[:, 0] = 0 #set the PC1, the common mode noise to zero, takes first column of every row i.e. PC1
 
             # reconstruct signal in pT
@@ -133,22 +133,34 @@ class IncrementalPCA(Filter):
 
 
 class FilterManager():
-
-    def __init__(self, raw_stream, filters: list[Filter]):
+    """
+    Transforms a raw data stream by applying a series of filters. Calling transform() returns a generator that yields tuples of (raw_data, filtered_data).
+    Must first set the raw stream using add_raw_stream() and add filters using add_filter().
+    """
+    def __init__(self):
+        self.raw_stream = None
+        self.filters = []
+    
+    def add_raw_stream(self, raw_stream):
         self.raw_stream = raw_stream
-        self.filters = filters
     
     def add_filter(self, filter: Filter):
         self.filters.append(filter)
     
     def remove_filter(self, filter: Filter):
         self.filters.remove(filter)
+    
+    def get_filter_names(self):
+        return [type(filt).__name__ for filt in self.filters]
 
     def transform(self):
         """
         Returns 2 streams, the first of raw data, the second of filtered data.
         
         """
+        if self.raw_stream is None:
+            raise ValueError("Raw stream not set. Use add_raw_stream() to set it before transforming.")
+
         unfiltered_stream, stream_to_filter = itertools.tee(self.raw_stream) # create 2 streams, one to keep one to filter
 
         for filt in self.filters:
