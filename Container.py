@@ -79,7 +79,7 @@ class Container():
 
         for filter_name in self._filters:
             filter_instance = self.resolve(filter_name)
-            filter_manager.add_filter(filter_instance)
+            filter_manager.add_filter(filter_name, filter_instance)
 
         master_stream = filter_manager.transform()
 
@@ -88,4 +88,4 @@ class Container():
 
         display_manager.start()
 
-        pass
+        

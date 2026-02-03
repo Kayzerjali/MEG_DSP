@@ -131,6 +131,26 @@ class IncrementalPCA(Filter):
 
             yield data_filt.T
 
+class Differential(Filter):
+    def __init__(self):
+        pass
+
+    def filter(self, data_generator):
+        """
+        Applies differential filtering by subtracting adjacent channels.
+        """
+        for data in data_generator:
+            if data is None:
+                yield None
+                continue
+
+            data = np.array(data)
+
+            # Calculate differential signals between adjacent channels
+            diff_data = np.diff(data, axis=0)
+
+            yield diff_data
+        
 
 class FilterManager():
     """
@@ -139,19 +159,24 @@ class FilterManager():
     """
     def __init__(self):
         self.raw_stream = None
-        self.filters = []
+        self.filters: dict[str, Filter] = {}
+        self.lock = threading.Lock()
     
     def add_raw_stream(self, raw_stream):
         self.raw_stream = raw_stream
     
-    def add_filter(self, filter: Filter):
-        self.filters.append(filter)
+    def add_filter(self, filter_name: str, filter_obj: Filter):
+        with self.lock:
+            self.filters[filter_name] = filter_obj
     
-    def remove_filter(self, filter: Filter):
-        self.filters.remove(filter)
+    def remove_filter(self, filter_name: str):
+        with self.lock:
+            if filter_name in self.filters:
+                del self.filters[filter_name]
     
-    def get_filter_names(self):
-        return [type(filt).__name__ for filt in self.filters]
+    def list_filters(self) -> list[str]:
+        with self.lock:
+            return list(self.filters.keys())
 
     def transform(self):
         """
@@ -161,11 +186,23 @@ class FilterManager():
         if self.raw_stream is None:
             raise ValueError("Raw stream not set. Use add_raw_stream() to set it before transforming.")
 
-        unfiltered_stream, stream_to_filter = itertools.tee(self.raw_stream) # create 2 streams, one to keep one to filter
-
-        for filt in self.filters:
-            stream_to_filter = filt.filter(stream_to_filter)
-
-        for raw, filt in zip(unfiltered_stream, stream_to_filter):
-            yield (raw, filt)
+        # Iterate over the raw stream directly
+        for raw_data in self.raw_stream:
+            if raw_data is None:
+                yield None
+                continue
+            
+            filtered_data = raw_data
+            
+            # Get a snapshot of current filters safely
+            with self.lock:
+                current_filters = list(self.filters.values())
+            
+            # Apply each filter sequentially to this chunk of data
+            for filt in current_filters:
+                # We wrap the single chunk in a list to satisfy the generator interface of filt.filter
+                # and then take the first result.
+                filtered_data = next(filt.filter([filtered_data]))
+            
+            yield (raw_data, filtered_data)
         
