@@ -2,15 +2,21 @@ import numpy as np
 from scipy import signal
 from sklearn.decomposition import PCA as skPCA, IncrementalPCA as skIncrementalPCA
 import threading
-import itertools
 
 
 
 
 class Filter():
 
-    def filter(self, data_generator):
+    def process_chunk(self, data):
         raise NotImplementedError
+
+    def filter(self, data_generator):
+        for data in data_generator:
+            if data is None:
+                yield None
+                continue
+            yield self.process_chunk(data)
     
 
 class BandPass(Filter):
@@ -44,24 +50,11 @@ class BandPass(Filter):
         self.sos = signal.butter(order, [lowcut, highcut], btype='band', fs = self.sample_freq, output='sos') # passing fs as param mean dont have to normalise frequs
 
 
-
-    def filter(self, data_generator):
-        """
-        Takes a data generator which uses yield to incrementally supply values and
-        creates a generator of filtered values.
-
-        :param data_generator: 
-        """
-
-        for data in data_generator:
-            if data is None:
-                yield None
-                continue
-
-            # Apply filter along the last axis (time), maintaining state in self.zi
-            with self.lock:
-                filtered_data, self.zi = signal.sosfilt(self.sos, data, axis=-1, zi=self.zi)
-            yield filtered_data
+    def process_chunk(self, data):
+        # Apply filter along the last axis (time), maintaining state in self.zi
+        with self.lock:
+            filtered_data, self.zi = signal.sosfilt(self.sos, data, axis=-1, zi=self.zi)
+        return filtered_data
 
 
     def change_filt_coeffs(self, lowcut : int, highcut : int, order : int = 5):
@@ -85,28 +78,17 @@ class PCA(Filter):
         self.n_components = n_components
         self.pca = skPCA(n_components=n_components)
 
-    def filter(self, data_generator):
+    def process_chunk(self, data):
         """
         Applies PCA to remove the first principal component (assumed to be common-mode noise)
         and reconstructs the signals back to the original sensor space.
         Output has the same number of channels as input.
         """
-        
-        for data in data_generator:
-            if data is None:
-                yield None
-                continue
-
-            data = np.array(data).T # PCA function require (samples, channels)
-
-            # Get components from PCA
-            components = self.pca.fit_transform(data)
-            components[:, 0] = 0 #set the PC1, the common mode noise to zero, takes first column of every row i.e. PC1
-
-            # reconstruct signal in pT
-            data_filt = self.pca.inverse_transform(components)
-
-            yield data_filt.T # transpose to original format
+        data = np.array(data).T # PCA function require (samples, channels)
+        components = self.pca.fit_transform(data)
+        components[:, 0] = 0 #set the PC1, the common mode noise to zero
+        data_filt = self.pca.inverse_transform(components)
+        return data_filt.T
 
 
 class IncrementalPCA(Filter):
@@ -115,41 +97,23 @@ class IncrementalPCA(Filter):
         self.n_components = n_components
         self.ipca = skIncrementalPCA(n_components=n_components)
 
-    def filter(self, data_generator):
-        for data in data_generator:
-            if data is None:
-                yield None
-                continue
-
-            data = np.array(data).T # PCA function require (samples, channels)
-
-            self.ipca.partial_fit(data) # Update model incrementally
-            components = self.ipca.transform(data)
-            components[:, 0] = 0 # set the PC1, the common mode noise to zero
-
-            data_filt = self.ipca.inverse_transform(components)
-
-            yield data_filt.T
+    def process_chunk(self, data):
+        data = np.array(data).T # PCA function require (samples, channels)
+        self.ipca.partial_fit(data) # Update model incrementally
+        components = self.ipca.transform(data)
+        components[:, 0] = 0 # set the PC1, the common mode noise to zero
+        data_filt = self.ipca.inverse_transform(components)
+        return data_filt.T
 
 class Differential(Filter):
     def __init__(self):
         pass
 
-    def filter(self, data_generator):
-        """
-        Applies differential filtering by subtracting adjacent channels.
-        """
-        for data in data_generator:
-            if data is None:
-                yield None
-                continue
-
-            data = np.array(data)
-
-            # Calculate differential signals between adjacent channels
-            diff_data = np.diff(data, axis=0)
-
-            yield diff_data
+    def process_chunk(self, data):
+        data = np.array(data)
+        # Calculate differential signals between adjacent channels
+        diff_data = np.diff(data, axis=0)
+        return diff_data
         
 
 class FilterManager():
@@ -200,9 +164,7 @@ class FilterManager():
             
             # Apply each filter sequentially to this chunk of data
             for filt in current_filters:
-                # We wrap the single chunk in a list to satisfy the generator interface of filt.filter
-                # and then take the first result.
-                filtered_data = next(filt.filter([filtered_data]))
+                filtered_data = filt.process_chunk(filtered_data)
             
             yield (raw_data, filtered_data)
         
