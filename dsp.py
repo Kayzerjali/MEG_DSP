@@ -19,10 +19,11 @@ def main():
         # Register Filters
         container.register_filter("bp_filt", lambda: Filter.BandPass())
         container.register_filter("pca_filt", lambda: Filter.PCA())
+        container.register_filter("diff_filt", lambda: Filter.Differential())
+        container.register_filter("ipca_filt", lambda: Filter.IncrementalPCA())
 
         # Register Managers
         container.register("filter_manager", lambda: Filter.FilterManager())
-        
         container.register("display_manager", lambda: Display.DisplayManager())
         
 
@@ -43,6 +44,9 @@ def main():
     except (KeyboardInterrupt, SystemExit): # Ctrl + C in terminal 
 
         print("Keyboard Interrupt")
+        container.get_instance("data_source").close()
+        print("NIDAQ Task Closed")
+
     
     finally:
 

@@ -1,9 +1,10 @@
 import matplotlib.pyplot as plt
 
-from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
 from collections import deque
 import numpy as np
 from typing import Literal
+import shutil
 
 
 
@@ -45,8 +46,18 @@ class TimeDomain(DynamicDisplay):
 
     def update(self, data):
         if data is None: return self.lines
+
+        num_incoming_channels = data.shape[0]
+        num_samples_in_chunk = data.shape[1] if num_incoming_channels > 0 else 0
+
         for i, line in enumerate(self.lines):
-            self.deque_list[i].extend(data[i])
+            if i < num_incoming_channels:
+                # We have data for this channel, extend the deque
+                self.deque_list[i].extend(data[i])
+            else:
+                # This channel is missing from the data, pad with zeros
+                self.deque_list[i].extend(np.zeros(num_samples_in_chunk))
+
             line.set_ydata(self.deque_list[i])
         
         if not self.blitting:
@@ -84,8 +95,17 @@ class FrequencyDomain(DynamicDisplay):
 
     def update(self, data):
         if data is None: return self.lines
+
+        num_incoming_channels = data.shape[0]
+        num_samples_in_chunk = data.shape[1] if num_incoming_channels > 0 else 0
+
         for i in range(len(self.lines)):
-            self.time_deques[i].extend(data[i])
+            if i < num_incoming_channels:
+                # We have data for this channel, extend the deque
+                self.time_deques[i].extend(data[i])
+            else:
+                # This channel is missing, pad with zeros to keep FFT stable
+                self.time_deques[i].extend(np.zeros(num_samples_in_chunk))
         
         y_fft = np.abs(np.fft.rfft(np.array(self.time_deques), axis=1)) / self.num_points
         y_fft[:, 0] = 0 # DC offset removal
@@ -115,12 +135,25 @@ class DisplayManager():
         self.blitting = blitting
         self.data_generator = None
         
+        # Recording state
+        self.writer = None
+        self.recording_state = "IDLE"
+        self.recording_filename = "recording.mp4"
+        
     def add_master_stream(self, data_generator):
         self.data_generator = data_generator
     
     def set_blitting(self, blitting: bool):
         self.blitting = blitting
         
+    def start_recording(self, filename: str):
+        self.recording_filename = filename
+        self.recording_state = "START"
+    
+    def stop_recording(self):
+        if self.recording_state == "RECORDING":
+            self.recording_state = "STOP"
+
     def start(self):
 
         if self.data_generator is None:
@@ -148,6 +181,35 @@ class DisplayManager():
     def _main_update(self, frame):
         if frame is None: return [line for p in self.plots for line in p.lines]
         
+        # Handle Recording State Machine
+        if self.recording_state == "START":
+            try:
+                if self.recording_filename.endswith(".gif"):
+                    self.writer = PillowWriter(fps=20)
+                else:
+                    if shutil.which("ffmpeg") is None:
+                        raise FileNotFoundError("FFmpeg is not installed or not in PATH. Install FFmpeg or use .gif extension.")
+                    self.writer = FFMpegWriter(fps=20)
+                
+                self.writer.setup(self.fig, self.recording_filename, dpi=100)
+                self.recording_state = "RECORDING"
+                print(f"Recording started: {self.recording_filename}")
+            except Exception as e:
+                print(f"Failed to start recording: {e}")
+                self.recording_state = "IDLE"
+        
+        elif self.recording_state == "RECORDING":
+            self.writer.grab_frame() # type: ignore # if in recording mode writer is initialized
+        
+        elif self.recording_state == "STOP":
+            if self.writer:
+                self.writer.finish()
+                self.writer = None
+                print(f"Recording saved: {self.recording_filename}")
+            self.recording_state = "IDLE"
+
+
+
         raw_data, filt_data = frame # We expect the generator to yield a tuple
         
         # Update each plot logic

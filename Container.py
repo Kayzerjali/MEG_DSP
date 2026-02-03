@@ -22,6 +22,9 @@ class Container():
         self._filters[name] = (provider) # add the provider to the dict under the name
         self._providers[name] = (provider) # also add to providers for resolution
     
+    def list_registered_filters(self) -> list[str]:
+        return list(self._filters.keys())
+
     def resolve(self, name: str) -> Any:
     
         if name not in self._providers: # provider to create instance has not been registered
@@ -40,6 +43,7 @@ class Container():
         
         else:
             raise ValueError(f"Instance for {name} not found, try resolving it first.")
+
     
     def run(self):
         """
@@ -74,12 +78,8 @@ class Container():
         # resolve Display Manager
         display_manager: Display.DisplayManager = self.resolve("display_manager")
 
-        # populate Filter Manager with raw stream and filters
+        # populate Filter Manager with raw stream
         filter_manager.add_raw_stream(data_source.data_stream())
-
-        for filter_name in self._filters:
-            filter_instance = self.resolve(filter_name)
-            filter_manager.add_filter(filter_name, filter_instance)
 
         master_stream = filter_manager.transform()
 

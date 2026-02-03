@@ -8,7 +8,12 @@ import threading
 
 class Filter():
 
-    def process_chunk(self, data):
+    def process_chunk(self, data) -> np.ndarray:
+        """
+        Process a chunk of data by applying the filter.
+        :param data: The data must be a 2D numpy array of shape (num_channels, num_samples)
+        :return: Filtered data of the same shape
+        """
         raise NotImplementedError
 
     def filter(self, data_generator):
@@ -69,8 +74,6 @@ class BandPass(Filter):
 
 
 
-
-
 class PCA(Filter):
 
     def __init__(self, n_components: int = 2):
@@ -84,8 +87,12 @@ class PCA(Filter):
         and reconstructs the signals back to the original sensor space.
         Output has the same number of channels as input.
         """
-        data = np.array(data).T # PCA function require (samples, channels)
-        components = self.pca.fit_transform(data)
+        data_t = np.array(data).T # Transpose to (samples, channels) for PCA
+        
+        if data.shape[0] < self.n_components: # not enough channels to perform PCA
+            return data # Return original data (channels, samples)
+            
+        components = self.pca.fit_transform(data_t)
         components[:, 0] = 0 #set the PC1, the common mode noise to zero
         data_filt = self.pca.inverse_transform(components)
         return data_filt.T
@@ -98,9 +105,20 @@ class IncrementalPCA(Filter):
         self.ipca = skIncrementalPCA(n_components=n_components)
 
     def process_chunk(self, data):
-        data = np.array(data).T # PCA function require (samples, channels)
-        self.ipca.partial_fit(data) # Update model incrementally
-        components = self.ipca.transform(data)
+        data_t = np.array(data).T # Transpose to (samples, channels) for PCA
+        
+        if data.shape[0] < self.n_components:
+            return data # Return original data (channels, samples)
+
+        try:
+            self.ipca.partial_fit(data_t) # Update model incrementally
+        except ValueError:
+
+            # Handle case where input dimensions change (e.g. upstream filter change)
+            self.ipca = skIncrementalPCA(n_components=self.n_components)
+            self.ipca.partial_fit(data_t)
+            
+        components = self.ipca.transform(data_t)
         components[:, 0] = 0 # set the PC1, the common mode noise to zero
         data_filt = self.ipca.inverse_transform(components)
         return data_filt.T
@@ -156,6 +174,10 @@ class FilterManager():
                 yield None
                 continue
             
+            if len(self.filters) == 0:
+                yield (raw_data, raw_data)
+                continue
+
             filtered_data = raw_data
             
             # Get a snapshot of current filters safely
