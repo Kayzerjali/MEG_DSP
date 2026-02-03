@@ -67,7 +67,7 @@ def main():
         master_stream = create_master_stream(raw_stream, bp_filt_stream)
 
         # Register Display Manager
-        container.register("display_manager", lambda: Display.DisplayManager(master_stream), singleton=True)
+        container.register("display_manager", lambda: Display.DisplayManager(master_stream, blitting=False), singleton=True)
 
         display_manager = container.resolve("display_manager")
         

@@ -114,7 +114,7 @@ class NIDAQ(DataSource):
         :type axis: Literal["x", "y", "z"]
         """
         # can be called while task is running so have to close current task and reinitalise with new axis
-        with self.lock:
+        with self.lock: # lock ensures if axis is changing, data cannot be read
             if self.task:
                 self.task.close()
 
@@ -139,6 +139,7 @@ class NIDAQ(DataSource):
         """
         with self.lock:
             data = self.task.read(num_samples)  # type: ignore
+
         data = np.array(data)
         data = (data/2.7) * 1000 # voltage to pT conversion (assuming 2.7 V/nT)
 
