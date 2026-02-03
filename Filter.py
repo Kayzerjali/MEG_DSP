@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import signal
-from sklearn.decomposition import PCA as skPCA
+from sklearn.decomposition import PCA as skPCA, IncrementalPCA as skIncrementalPCA
 import threading
 import itertools
 
@@ -10,7 +10,7 @@ import itertools
 class Filter():
 
     def filter(self, data_generator):
-        pass
+        raise NotImplementedError
     
 
 class BandPass(Filter):
@@ -107,6 +107,30 @@ class PCA(Filter):
             data_filt = self.pca.inverse_transform(components)
 
             yield data_filt.T # transpose to original format
+
+
+class IncrementalPCA(Filter):
+
+    def __init__(self, n_components: int = 2):
+        self.n_components = n_components
+        self.ipca = skIncrementalPCA(n_components=n_components)
+
+    def filter(self, data_generator):
+        for data in data_generator:
+            if data is None:
+                yield None
+                continue
+
+            data = np.array(data).T # PCA function require (samples, channels)
+
+            self.ipca.partial_fit(data) # Update model incrementally
+            components = self.ipca.transform(data)
+            components[:, 0] = 0 # set the PC1, the common mode noise to zero
+
+            data_filt = self.ipca.inverse_transform(components)
+
+            yield data_filt.T
+
 
 class FilterManager():
 

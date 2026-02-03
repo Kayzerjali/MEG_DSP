@@ -93,7 +93,9 @@ class FrequencyDomain(DynamicDisplay):
 
 class DisplayManager():
 
-    def __init__(self, data_generator):
+    def __init__(self, data_generator, plots: list[DynamicDisplay] = []):
+        
+        
         # Create a 2x2 grid in ONE window
         self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 8))
         self.data_generator = data_generator

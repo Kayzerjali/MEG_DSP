@@ -10,6 +10,10 @@ import traceback
 
 
 
+
+
+
+
 def create_master_stream(raw_stream, filt_stream):
     """
     Converts the streams into a single stream of the form ([[ch1_raw],[ch2_raw]], [[ch1_filt],[ch2_filt]]).
@@ -25,7 +29,7 @@ def create_master_stream(raw_stream, filt_stream):
 
 
 def main():
-    data_source = None
+    data_source = None # initialised to be used in try block if exception occurs
 
     try:
         # Register all objects
@@ -39,7 +43,7 @@ def main():
         # Resolve objects (get instances)
         try:
             data_source = container.resolve("data_source")
-            
+
         except Exception as e: # if cannot resolve data source fallback on Mock Signal
             print(f"Warning: Could not initialize NIDAQ ({e}).")
             print("Switching to MockSignal for simulation.")
