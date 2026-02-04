@@ -44,15 +44,19 @@ def main():
     except (KeyboardInterrupt, SystemExit): # Ctrl + C in terminal 
 
         print("Keyboard Interrupt")
-        container.get_instance("data_source").close()
-        print("NIDAQ Task Closed")
+        plt.close('all')
+        if container.get_instance("data_source").Task is not None:
+                container.get_instance("data_source").close()
+                print("NIDAQ Task Closed")
 
     
     finally:
 
         try:
-            container.get_instance("data_source").close()
-            print("NIDAQ Task Closed")
+            plt.close('all')
+            if container.get_instance("data_source").Task is not None:
+                container.get_instance("data_source").close()
+                print("NIDAQ Task Closed")
 
         except Exception:
             pass

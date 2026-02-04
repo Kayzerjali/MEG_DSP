@@ -66,7 +66,7 @@ class BandPass(Filter):
         with self.lock:
             self.calc_filt_coeffs(lowcut, highcut, order) # updates self.sos which is used in sosfilt()
             
-            # Recalculate zi_init because order (and thus number of sections) might have changed
+            # Recalculate zi_init because order (and number of sections) might have changed
             zi_init = signal.sosfilt_zi(self.sos)
             self.zi_init = np.repeat(zi_init[:, np.newaxis, :], self.num_channels, axis=1)
             self.reset_state()

@@ -59,11 +59,11 @@ class DSPShell(Cmd):
             print("Invalid arguments")                
                 
 
-    def do_remove_filter(self, arg):
+    def do_remove_filt(self, arg):
         """
         Removes a filter from the filter manager.
-        Usage: remove_filter filter_name
-        Example: remove_filter bp_filt
+        Usage: remove_filt filter_name
+        Example: remove_filt bp_filt
         """
         try:
             filter_manager: Filter.FilterManager = self._container.get_instance("filter_manager")
@@ -122,11 +122,11 @@ class DSPShell(Cmd):
     
 
 
-    def do_add_filter(self, arg):
+    def do_add_filt(self, arg):
         """
-        Adds a filter to the filter manager. Filter must be registered in the container. To see available filters use 'list_filters'.
-        Usage: add_filter filter_name
-        Example: add_filter bp_filt
+        Adds a filter to the filter manager. Filter must be registered in the container. To see available filters use 'list_registered_filters'.
+        Usage: add_filt filter_name
+        Example: add_filt bp_filt
         """
         try:
             filter_manager: Filter.FilterManager = self._container.get_instance("filter_manager")
@@ -159,6 +159,50 @@ class DSPShell(Cmd):
             display_manager.stop_recording()
         else:
             print("Unknown command. Use 'start' or 'stop'.")
+    
+    def do_set_axis_limits(self, arg):
+        """
+        Sets the y-axis limits for the a specific subplot.
+        Usage: set_axis_limits (row, col) ymin ymax
+        Example: set_axis_limits (2, 2) -2000 2000
+        """
+        args = arg.split()
+        if len(args) != 3:
+            print("Invalid arguments! Usage: set_axis_limits (row, col) ymin ymax")
+            print(f"Expected 3 arguments, got {len(args)}")
+            return
+
+        try:
+            row, col = map(int, args[0][1:-1].split(","))
+            ymin = float(args[1])
+            ymax = float(args[2])
+            display_manager: Display.DisplayManager = self._container.get_instance("display_manager")
+            display_manager.set_axis_limits((row, col), (ymin, ymax))
+            print(f"Y-axis limits set to [{ymin}, {ymax}] for subplot ({row}, {col})")
+        except ValueError:
+            print("Invalid limits. Please provide numeric values.")
+        except Exception as e:
+            print(f"Error setting axis limits: {e}")
+
+    def do_set_auto_scale(self, arg):
+        """
+        Sets the y-axis to auto-scale for the display.
+        Usage: set_auto_scale (row, col)
+        Example: set_auto_scale (2, 2)
+        """
+        args = arg.split()
+        if len(args) != 1:
+            print("Invalid arguments! Usage: set_auto_scale (row, col)")
+            return
+        try:
+            row, col = map(int, args[0][1:-1].split(","))
+            display_manager: Display.DisplayManager = self._container.get_instance("display_manager")
+            display_manager.set_auto_scale((row, col))
+            print(f"Y-axis auto-scaling enabled for subplot ({row}, {col})")
+        except Exception as e:
+            print(f"Error setting auto scale: {e}")
+        
+
 
     def do_quit(self, arg):
         return True

@@ -92,6 +92,7 @@ class MockSignal(DataSource):
 
     def close(self):
         self.stop_event.set()
+        self.Task = None
         if self.thread:
             self.thread.join(timeout=0.1)
 

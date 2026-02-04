@@ -19,6 +19,13 @@ class DynamicDisplay():
         :param data_generator: A data generator
         :param x_axis: If the x-axis is none will use regular time intervals, if specified (usually for fft displays) it will be used
         """
+        self.lines = []
+
+    def update(self, data):
+        raise NotImplementedError
+    
+    def update_title_axis(self, axis):
+        raise NotImplementedError
        
 
 class TimeDomain(DynamicDisplay):
@@ -62,13 +69,16 @@ class TimeDomain(DynamicDisplay):
         
         if not self.blitting:
             self.ax.relim()
-            self.ax.autoscale_view(scalex=False, scaley=True)
+            self.ax.autoscale_view(scalex=False, scaley=self.ax.get_autoscaley_on()) # the get_autoscaley_on() is a flag set false when ylim is set manually
             
         return self.lines
 
     def update_title_axis(self, axis):
         base_title, _ = self.title.split(" : ")
         self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
+
+    def set_blitting(self, blitting: bool):
+        self.blitting = blitting
 
 
 class FrequencyDomain(DynamicDisplay):
@@ -116,13 +126,57 @@ class FrequencyDomain(DynamicDisplay):
             
         if not self.blitting:
             self.ax.relim()
-            self.ax.autoscale_view(scalex=True, scaley=True)
+            self.ax.autoscale_view(scalex=True, scaley=self.ax.get_autoscaley_on())
             
         return self.lines
 
     def update_title_axis(self, axis):
         base_title, _ = self.title.split(" : ")
         self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
+
+    def set_blitting(self, blitting: bool):
+        self.blitting = blitting
+
+
+class PrincipleComponentDomain(DynamicDisplay):
+    """
+    A plot that shows sensor 1 values on the x-axis and sensor 2 values on the y-axis.
+    Useful for visualizing correlations between two sensors.
+    """
+
+    def __init__(self, ax, title="", num_points: int = 1000, blitting: bool = True):
+
+        self.ax = ax
+        self.title = title
+        self.num_points = num_points
+        self.blitting = blitting
+        self.lines = [self.ax.plot(np.zeros(self.num_points), np.zeros(self.num_points), label="PCA")[0]]
+        self.ax.set_title(title)
+
+        if self.blitting:
+            self.ax.set_xlim(-8000, 8000)
+            self.ax.set_ylim(-8000, 8000)
+
+        self.ax.grid(True)
+
+        self.ch1_deque = deque((np.zeros(self.num_points)), maxlen=self.num_points)
+        self.ch2_deque = deque((np.zeros(self.num_points)), maxlen=self.num_points)
+
+    
+    def update(self, data):
+        if data is None: return self.lines
+        if data.shape[0] < 2: return self.lines
+
+        self.ch1_deque.extend(data[0])
+        self.ch2_deque.extend(data[1])
+        self.lines[0].set_xdata(self.ch1_deque)
+        self.lines[0].set_ydata(self.ch2_deque)
+
+        if not self.blitting:
+            self.ax.relim()
+            self.ax.autoscale_view(scalex=True, scaley=self.ax.get_autoscaley_on())
+            
+        return self.lines
 
 
 class DisplayManager():
@@ -163,7 +217,7 @@ class DisplayManager():
         self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 8))
 
         # Initialize the sub-managers with specific axes
-        self.plots = [
+        self.plots: list[DynamicDisplay] = [
             TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis", blitting=self.blitting),
             FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis", blitting=self.blitting),
             TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis", blitting=self.blitting),
@@ -227,3 +281,33 @@ class DisplayManager():
             plot.update_title_axis(axis)
             
         self.fig.canvas.draw_idle() # to force a redraw dispite blitting
+
+    def set_axis_limits(self, plot: tuple[int, int], limits: tuple[float, float]):
+        """
+        Sets the y-axis limits for a specific plot.
+        :param plot: tuple of (row, col) indices for the subplot
+        :param limits: (ymin, ymax)
+        """
+        row, col = plot
+        if 0 <= row <= 2 and 0 <= col <= 2:
+            ax = self.axes[row, col]
+            try:
+                ax.set_ylim(limits)
+                self.fig.canvas.draw_idle()
+            except Exception as e:
+                print(f"Error setting axis limits: {e}")
+        else:
+            print(f"Invalid plot index: {plot}")
+    
+    def set_auto_scale(self, plot: tuple[int, int]):
+        """
+        Sets the y-axis to auto-scale for a specific plot.
+        :param plot: tuple of (row, col) indices for the subplot
+        """
+        row, col = plot
+        if 0 <= row < 2 and 0 <= col < 2:
+            ax = self.axes[row, col]
+            ax.set_autoscaley_on(True)
+            self.fig.canvas.draw_idle()
+        else:
+            print(f"Invalid plot index: {plot}")
