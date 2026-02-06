@@ -13,7 +13,7 @@ class DynamicDisplay():
     """
     Base class for different types of dynamic displays (e.g. time domain, frequency domain, PCA).
     Each display type will have its own logic for how to update the plot based on incoming data, but they will all share a common interface for updating the plot and changing the title axis.
-    Implementations of this class should implement the update() method which takes in new data and updates the plot accordingly.
+    Implementations of this class should implement the update() and add_axis() methods.
 
     The update_title_axis() method which changes the title of the plot to reflect the current axis being displayed.
     """
@@ -25,18 +25,42 @@ class DynamicDisplay():
         :param x_axis: If the x-axis is none will use regular time intervals, if specified (usually for fft displays) it will be used
         """
         self.lines = []
+        self.title = ""
+        self.blitting = False
+        self.ax = None
+    
 
     def update(self, data):
+        """
+        The display manager will call update() in each display and pass the relevant data to it.
+        For example, for the first half of the displays (assumed to be raw) it will pass the raw data, 
+        and for the second half (assumed to be filtered) it will pass the filtered data.
+        This method should update the lines of the plot based on the incoming data and return the updated lines to satisfy the requirements of FuncAnimation.
+        
+        :param self: Description
+        :param data: Description
+        """
         raise NotImplementedError
     
-    def add_axis(self, ax):
+    def add_axis(self, ax: plt.Axes): # type: ignore
+        """
+        add_axis is used to add the axis to the display after it has been created.
+        This is because the axis is created by the DisplayManager and passed to the display after it is created.
+        Implementations of this method should use the passed ax to store and intialise the lines to and the title.
+        
+        :param ax: An Axes object passed by the DisplayManager which the display should use to create its plot.
+        An axes is essentially a subplot, so this allows the DisplayManager to manage the layout of the plots while the individual display classes manage the content of the plots.
+        """
         raise NotImplementedError
+
 
     def update_title_axis(self, axis):
-        raise NotImplementedError
+        # Common implementation for all displays
+        base_title, _ = self.title.split(" : ")
+        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")  # type: ignore
 
     def set_blitting(self, blitting: bool):
-        raise NotImplementedError
+        self.blitting = blitting
        
 
 class TimeDomain(DynamicDisplay):
@@ -80,12 +104,6 @@ class TimeDomain(DynamicDisplay):
             
         return self.lines
 
-    def update_title_axis(self, axis):
-        base_title, _ = self.title.split(" : ")
-        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
-
-    def set_blitting(self, blitting: bool):
-        self.blitting = blitting
     
     def add_axis(self, ax):
         self.ax = ax
@@ -153,13 +171,6 @@ class FrequencyDomain(DynamicDisplay):
             
         return self.lines
 
-    def update_title_axis(self, axis):
-        base_title, _ = self.title.split(" : ")
-        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
-
-    def set_blitting(self, blitting: bool):
-        self.blitting = blitting
-
 
 class PrincipleComponentDomain(DynamicDisplay):
     """
@@ -194,10 +205,6 @@ class PrincipleComponentDomain(DynamicDisplay):
             
         return self.lines
 
-    def update_title_axis(self, axis):
-        base_title, _ = self.title.split(" : ")
-        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
-    
     def add_axis(self, ax):
         self.ax = ax 
 
@@ -211,9 +218,6 @@ class PrincipleComponentDomain(DynamicDisplay):
         self.ax.grid(True)
     
 
-    def set_blitting(self, blitting: bool):
-        self.blitting = blitting
-
 class DisplayManager():
     """
     Takes a data generator which yields tuples of (raw_data, filtered_data) and displays them in a 2x2 grid of plots.
@@ -224,7 +228,6 @@ class DisplayManager():
         self.blitting = blitting
         self.data_generator = None
         self.plots: list[DynamicDisplay] = []
-        self.plot_info: list[tuple[DynamicDisplay, tuple[int, int]]] = []
 
         
     def add_master_stream(self, data_generator):
@@ -233,10 +236,8 @@ class DisplayManager():
     def set_blitting(self, blitting: bool):
         self.blitting = blitting
 
-    def add_plot(self, plot: DynamicDisplay, row: int = 0, col: int = 0):
-        self.plot_info.append((plot, (row, col)))
+    def add_plot(self, plot: DynamicDisplay):
         self.plots.append(plot)
-
 
 
     def start(self):
@@ -269,17 +270,6 @@ class DisplayManager():
             
             plot.set_blitting(self.blitting)
 
-
-        # Initialize the sub-managers with specific axes
-        # self.plots: list[DynamicDisplay] = [
-        #     TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis", blitting=self.blitting),
-        #     FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis", blitting=self.blitting),
-        #     PrincipleComponentDomain(self.axes[0, 2], title="Raw PCA : X Axis", blitting=self.blitting),
-
-        #     TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis", blitting=self.blitting),
-        #     FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain : X Axis", blitting=self.blitting),
-        #     PrincipleComponentDomain(self.axes[1, 2], title="Filtered PCA : X Axis", blitting=self.blitting),
-        # ]
         
         self.fig.tight_layout()
         

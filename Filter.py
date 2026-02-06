@@ -9,7 +9,7 @@ import sys
 
 class Filter():
     """
-    Any implementation of Filter must implement the following method, process_chunk.
+    Any implementation of Filter must implement the following method, process_chunk. It is crucial the data shape is maintained as (num_channels, num_samples) throughout the pipeline for compatibility with the displays.
     To add a filter to the pipeline, register it in the container with container.register_filter("filter_name", lambda: FilterClass()).
     The filter can then be added to the filter manager with the command 'add_filt filter_name' in the CLI. This allows for dynamic addition and removal of filters during runtime.
     
@@ -145,6 +145,9 @@ class PCA(Filter):
         self.n_components = n_components
         self.pca = skPCA(n_components=n_components)
 
+    def _inverse_transform(self, components):
+        return self.pca.inverse_transform(components)
+
     def process_chunk(self, data):
 
         data_t = np.array(data).T # Transpose to (samples, channels) for PCA
@@ -154,7 +157,7 @@ class PCA(Filter):
             
         components = self.pca.fit_transform(data_t)
         components[:, 0] = 0 #set the PC1, the common mode noise to zero
-        data_filt = self.pca.inverse_transform(components)
+        data_filt = self._inverse_transform(components)
         return data_filt.T
 
 
@@ -178,34 +181,21 @@ class IncrementalPCA(Filter):
         if data.shape[0] < self.n_components:
             return data # Return original data (channels, samples)
 
-        try:
-            self.ipca.partial_fit(data_t) # Update model incrementally
-        except ValueError:
+        self.ipca.partial_fit(data_t) # Update model incrementally
 
-            # Handle case where input dimensions change (e.g. upstream filter change)
-            self.ipca = skIncrementalPCA(n_components=self.n_components)
-            self.ipca.partial_fit(data_t)
             
         components = self.ipca.transform(data_t)
         components[:, 0] = 0 # set the PC1, the common mode noise to zero
         data_filt = self.ipca.inverse_transform(components)
         return data_filt.T
 
-class Differential(Filter):
-    def __init__(self):
-        pass
 
-    def process_chunk(self, data):
-        data = np.array(data)
-        # Calculate differential signals between adjacent channels
-        diff_data = np.diff(data, axis=0)
-        return diff_data
-        
-class KPCA(Filter):
+class KPCA(PCA):
     """
     Kernel PCA (KPCA) implementation. Computer will crash if not powerful enough. KPCA is a non-linear extension of PCA that uses kernel methods to capture non-linear relationships in the data.
     It maps the input data into a higher-dimensional feature space using a kernel function and then performs PCA in that space.
     This allows KPCA to capture more complex structures in the data compared to standard PCA, which is limited to linear relationships.
+    KPCA uses PCAs process_chuck method
 
     :param kernal: The kernel function to use in KPCA. Choices include 'linear', 'poly', 'rbf', 'sigmoid', 'cosine', and 'precomputed'.
     Default is 'rbf' (radial basis function), which is a popular choice for capturing non-linear relationships. Choose the kernel based on the expected structure of the data.
@@ -214,70 +204,47 @@ class KPCA(Filter):
     """
     def __init__(self, n_components: int = 2, kernel: Literal['linear', 'poly', 'rbf', 'sigmoid', 'cosine', 'precomputed'] = "rbf"):
         self.n_components = n_components
-        self.kpca = skKernelPCA(n_components=n_components, kernel=kernel, fit_inverse_transform=True)
+        self.pca = skKernelPCA(n_components=n_components, kernel=kernel, fit_inverse_transform=True)
 
-    def process_chunk(self, data):
-   
-        data_t = np.array(data).T # Transpose to (samples, channels)
-        n_samples, n_features = data_t.shape
-        
-        # Ensure sufficient dimensions
-        if n_samples < self.n_components or n_features < self.n_components:
-            return data
-
-        # Check for constant signal (zero variance) to avoid singular matrix errors
-        if np.all(np.var(data_t, axis=0) < 1e-12):
-            return data
-
-        components = self.kpca.fit_transform(data_t)
-        
-        if components.shape[1] > 0:
-            components[:, 0] = 0 # Remove first component (assumed noise)
-        
-        data_filt = self.kpca.inverse_transform(components)
-        return data_filt.T
         
    
 
-class SPCA(Filter):
+class SPCA(PCA):
+
     """
-    Sparse PCA (SPCA) implementation.
-    
-    Difference:
-    Standard PCA produces principal components that are linear combinations of all input variables 
-    (dense loadings). SPCA adds a sparsity constraint (L1 penalty), forcing many loadings to be zero.
-    
-    When to use:
-    Use when you want interpretability or when you believe the noise/signal is localized to a 
-    subset of sensors rather than spread across all of them. It helps in isolating sources.
-    
-    Unique feature:
-    Produces "sparse" components where each component involves only a few original sensors. 
-    Computationally more expensive than standard PCA.
+    Sparse PCA (SPCA) implementation. idk how this works tbh. 
     """
 
-    def __init__(self, n_components: int = 2, alpha: float = 1.0):
+    def __init__(self, n_components: int = 2):
         self.n_components = n_components
-        self.spca = skSparsePCA(n_components=n_components, alpha=alpha)
+        self.pca = skSparsePCA(n_components=n_components)
 
-    def process_chunk(self, data):
-        data_t = np.array(data).T # Transpose to (samples, channels)
-        
-        if data.shape[0] < self.n_components:
-            return data
-
-        components = self.spca.fit_transform(data_t)
-        components[:, 0] = 0 # Remove first component
-        
+    def _inverse_transform(self, components):
+        """
+        SPCA does not have a built-in inverse_transform method, so we need to reconstruct the data manually.
+        """
         # Reconstruct: X_hat = T @ V + mean
-        data_filt = np.dot(components, self.spca.components_) + self.spca.mean_
-        return data_filt.T
+        return np.dot(components, self.pca.components_) + self.pca.mean_
+
+
+
+
+class SSP(Filter):
+    pass
+
+class SSS(Filter):
+    pass
+
 
 
 class FilterManager():
     """
-    Transforms a raw data stream by applying a series of filters. Calling transform() returns a generator that yields tuples of (raw_data, filtered_data).
-    Must first set the raw stream using add_raw_stream() and add filters using add_filter().
+    Filter Manager is responsible for managing the filters in the pipeline.
+    It maintains a list of active filters and applies them sequentially to the data stream using the transform() method.
+    FilterManager is initally empty, a raw stream is added with add_raw_stream() in container.run().
+    Filters can be added and removed dynamically during runtime with the 'add_filt filter_name' and 'remove_filt filter_name' commands in the CLI.
+    This allows for flexible experimentation with different filter combinations without restarting the program.
+    
     """
     def __init__(self):
         self.raw_stream = None
@@ -310,7 +277,8 @@ class FilterManager():
 
     def transform(self):
         """
-        Returns 2 streams, the first of raw data, the second of filtered data.
+        Returns 2 streams, the first of raw data provided to the manager, the second of filtered data from applying all filters sequentially to the raw stream.
+        Both are generators that yield data chunks.
         
         """
         if self.raw_stream is None:

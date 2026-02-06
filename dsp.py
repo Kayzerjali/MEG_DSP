@@ -21,24 +21,24 @@ def main():
         container.register_filter("bp", lambda: Filter.BandPass())
         container.register_filter("notch", lambda: Filter.Notch())
         container.register_filter("pca", lambda: Filter.PCA())
-        container.register_filter("diff", lambda: Filter.Differential())
         container.register_filter("ipca", lambda: Filter.IncrementalPCA())
-        container.register_filter("kpca", lambda: Filter.KPCA())
+        container.register_filter("kpca", lambda: Filter.KPCA()) # this will crash if computer is weak, use with caution
         container.register_filter("spca", lambda: Filter.SPCA())
 
         # Register Displays
+
         # Row 1: Raw Data
         container.register_display("Raw Time Domain : X Axis", lambda title: Display.TimeDomain(title=title))
         container.register_display("Raw Frequency Domain : X Axis", lambda title: Display.FrequencyDomain(title=title))
         container.register_display("Raw PCA : X Axis", lambda title: Display.PrincipleComponentDomain(title=title))
-        
+
         # Row 2: Filtered Data
         container.register_display("Filtered Time Domain : X Axis", lambda title: Display.TimeDomain(title=title))
         container.register_display("Filtered Frequency Domain : X Axis", lambda title: Display.FrequencyDomain(title=title))
         container.register_display("Filtered PCA : X Axis", lambda title: Display.PrincipleComponentDomain(title=title))
 
-        # Register Managers
 
+        # Register Managers
         container.register("filter_manager", lambda: Filter.FilterManager())
         container.register("display_manager", lambda: Display.DisplayManager())
         
@@ -65,7 +65,6 @@ def main():
         print("An unexpected error occurred:")
         traceback.print_exc()
 
-    
     finally:
 
         try:

@@ -10,34 +10,45 @@ import queue
 
 
 class DataSource():
-
-    def get_data(self, num_samples: int):
-        pass
-    def get_num_channels(self):
-        pass
+    """
+    Any implementation of DataSource must implement the following methods.
+    The data_stream method should return a generator object yielding data, which can be assigned to a variable.
+    The close method should close any resources used by the data source.
     
-    def data_stream(self):
-        pass
+    :var data: Description
+    :vartype data: bool
+    """
+
+    def data_stream(self, num_samples_per_read: int = 100):
+        """
+        Implementations of this method should return a generator object yielding data, which can be assigned to a variable.
+        The generator should yield data in the format data = [[ch1_vals] ,[ch2_vals]], i.e. with shape (num_channels, num_samples).
+       
+        :param num_samples_per_read: number of samples a data source should read at a time.
+        This is used to control the rate at which data is read from the data source and can be adjusted based on the sample rate of the data source and the desired update rate of the displays.
+        :type num_samples_per_read: int
+        """
+        raise NotImplementedError("data_stream method not implemented, base class has been invoked ")
+
     def close(self):
-        pass
-    def set_axis(self, axis: str):
-        pass
+        """
+        This method should close any resources used by the data source, such as threads or hardware connections. It is called when the program is exiting to ensure a clean shutdown.
+        
+        """
+        raise NotImplementedError("close method not implemented, base class has been invoked ")
+
 
 class MockText(DataSource):
 
     def __init__(self, filename: str):
         self.filename = filename
-
-
-    def get_data(self, num_samples: int):
-
-        return super().get_data(num_samples)
-    
-    def get_num_channels(self):
-        return super().get_num_channels()
     
     def data_stream(self):
         return super().data_stream()
+    
+    def close(self):
+        return super().close()
+
     
 class MockSignal(DataSource):
 
@@ -137,7 +148,7 @@ class NIDAQ(DataSource):
         Returns data in the format data = [[ch1_vals] ,[ch2_vals]]. Data is in units of pT.
         
     
-        :param num_samples: Description
+        :param num_samples: number of samples to read from the data source.
         :type num_samples: int
         """
         with self.lock:
@@ -166,11 +177,7 @@ class NIDAQ(DataSource):
         return len(self.channels)
 
     def data_stream(self, num_samples_per_read: int = 100): 
-        """
-        Creates a generator object yielding data. This can be assigned to a variable. 
         
-        :param num_samples_per_read: 
-        """
         while True:
             data = self.get_data(num_samples_per_read)
             yield data
