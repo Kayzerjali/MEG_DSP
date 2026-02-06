@@ -22,5 +22,9 @@ To add commands to the custom CLI in DSPShell, prefix the command name with do_ 
 ## Dependancies
 1) scikit-learn : "pip install scikit-learn"
 
+## Contact
+s49621169@student.uq.edu.au
+
+
 
 
