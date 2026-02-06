@@ -1,7 +1,7 @@
 from typing import Any, Callable
-import DataSource
-import Filter
-import Display
+from DataSource import DataSource as DS, MockSignal as MS
+from Filter import Filter as F, FilterManager as FM
+from Display import DynamicDisplay as DD, DisplayManager as DM
 
 
 class Container():
@@ -11,19 +11,36 @@ class Container():
     def __init__(self):
         
         # maps the provider name to a tuple containing the provider init and the bool which indicates if provider is singlton, i.e. there should only be one instance 
-        self._providers: dict[str, Callable[[], Any]] = {}
+        self._providers: dict[str, Callable[..., Any]] = {}
         self._instances: dict[str, Any] = {}
-        self._filters: dict[str, Callable[[], Any]] = {}
+
+
+        self._filters: dict[str, Callable[[], F]] = {}
+        self._displays: dict[str, Callable[..., DD]] = {}
     
-    def register(self, name: str, provider: Callable[[], Any]) -> None:
+    def register(self, name: str, provider: Callable[[], Any]) -> None: # register a provider (class) to a name to be stored in container
         self._providers[name] = (provider) # add the provider to the dict under the name
     
-    def register_filter(self, name: str, provider: Callable[[], Any]) -> None:
+    def register_filter(self, name: str, provider: Callable[[], F]) -> None:
         self._filters[name] = (provider) # add the provider to the dict under the name
         self._providers[name] = (provider) # also add to providers for resolution
     
     def list_registered_filters(self) -> list[str]:
         return list(self._filters.keys())
+
+    def register_display(self, title: str, provider: Callable[..., DD]) -> None:
+        """
+        Docstring for register_display
+        
+        :param title: Title of the display, used for identification and display purposes. Must have format "<Base Title> : X Axis" where X is the name axis
+        :type title: str
+        :param provider: A callable that returns an instance of a display when called. The provider should take a title argument to set the title of the display it creates.
+        :type provider: Callable[..., DD]
+        """
+
+        self._displays[title] = (provider) # add the display to the dict of displays
+        self._providers[title] = (provider) # add the provider to the dict under the name
+
 
     def resolve(self, name: str) -> Any:
     
@@ -61,29 +78,34 @@ class Container():
         # try resolve data source, default to mock source if fails
         try:
 
-            data_source: DataSource.DataSource = self.resolve("data_source")
+            data_source: DS = self.resolve("data_source")
 
         except Exception as e: # if cannot resolve data source fallback on Mock Signal
             print(f"Warning: Could not initialize NIDAQ ({e}).")
             print("Switching to MockSignal for simulation.")
 
             # Re-register data_source as MockSignal
-            self.register("data_source", lambda: DataSource.MockSignal())
-            data_source = self.resolve("data_source")
+            self.register("data_source", lambda: MS())
+            data_source: DS = self.resolve("data_source")
 
         
         # resolve Filter Manager
-        filter_manager: Filter.FilterManager  = self.resolve("filter_manager")
+        filter_manager: FM  = self.resolve("filter_manager")
 
         # resolve Display Manager
-        display_manager: Display.DisplayManager = self.resolve("display_manager")
+        display_manager: DM = self.resolve("display_manager")
 
         # populate Filter Manager with raw stream
         filter_manager.add_raw_stream(data_source.data_stream())
 
         master_stream = filter_manager.transform()
 
-        # populate Display Manager with master stream
+        # populate Display Manager with displays and master stream
+        for title, provider in self._displays.items():
+            display: DD = provider(title = title)
+            display_manager.add_plot(display)
+        
+
         display_manager.add_master_stream(master_stream)
 
         display_manager.start()

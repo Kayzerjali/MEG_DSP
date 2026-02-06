@@ -1,17 +1,22 @@
 import matplotlib.pyplot as plt
 
-from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
+from matplotlib.animation import FuncAnimation
 from collections import deque
 import numpy as np
 from typing import Literal
-import shutil
-
 
 
 
 
 
 class DynamicDisplay():
+    """
+    Base class for different types of dynamic displays (e.g. time domain, frequency domain, PCA).
+    Each display type will have its own logic for how to update the plot based on incoming data, but they will all share a common interface for updating the plot and changing the title axis.
+    Implementations of this class should implement the update() method which takes in new data and updates the plot accordingly.
+
+    The update_title_axis() method which changes the title of the plot to reflect the current axis being displayed.
+    """
 
     def __init__(self):
         """
@@ -24,32 +29,34 @@ class DynamicDisplay():
     def update(self, data):
         raise NotImplementedError
     
+    def add_axis(self, ax):
+        raise NotImplementedError
+
     def update_title_axis(self, axis):
+        raise NotImplementedError
+
+    def set_blitting(self, blitting: bool):
         raise NotImplementedError
        
 
 class TimeDomain(DynamicDisplay):
     """
-    Helper class for DisplayManager.
     Gets passed an ax object corresponding to a subplot from DisplayManger which this class manages. 
     This class create the plot for the ax and manages the lines by updating them in _update().
     _update() is called by DisplayManager 
     """
-    def __init__(self, ax, num_channels=2, sample_rate=1000, time_window=1.0, title="", blitting: bool = True):
-        self.ax = ax
+
+    def __init__(self, num_channels=2, sample_rate=1000, time_window=1.0, title="", blitting: bool = False):
+
+        self.num_channels = num_channels
         self.num_points = int(sample_rate * time_window)
         self.deque_list = [deque(np.zeros(self.num_points), maxlen=self.num_points) for _ in range(num_channels)]
         self.title = title # ensure title has format "base title : X Axis"
         self.blitting = blitting
 
 
-        t = np.arange(-self.num_points + 1, 1) / sample_rate
-        self.lines = [self.ax.plot(t, np.zeros(self.num_points), label=f"Ch {i+1}")[0] for i in range(num_channels)]
+        self.t = np.arange(-self.num_points + 1, 1) / sample_rate
         
-        self.ax.set_title(title)
-        if self.blitting:
-            self.ax.set_ylim(-8000, 8000) # Required for efficient blitting
-        self.ax.grid(True)
 
     def update(self, data):
         if data is None: return self.lines
@@ -79,6 +86,16 @@ class TimeDomain(DynamicDisplay):
 
     def set_blitting(self, blitting: bool):
         self.blitting = blitting
+    
+    def add_axis(self, ax):
+        self.ax = ax
+        self.lines = [self.ax.plot(self.t, np.zeros(self.num_points), label=f"Ch {i+1}")[0] for i in range(self.num_channels)]
+        
+        self.ax.set_title(self.title)
+        if self.blitting:
+            self.ax.set_ylim(-8000, 8000) # Required for efficient blitting
+        self.ax.grid(True)
+
 
 
 class FrequencyDomain(DynamicDisplay):
@@ -89,19 +106,25 @@ class FrequencyDomain(DynamicDisplay):
     _update() is called by DisplayManager 
 
     """
-    def __init__(self, ax, num_channels=2, sample_rate=1000, time_window=5.0, title="", blitting: bool = True):
-        self.ax = ax
+    def __init__(self, num_channels=2, sample_rate=1000, time_window=5.0, title="", blitting: bool = False):
+
+        # display initalised without axis as axis s provided by display manager which calls add_axis()
         self.num_points = int(sample_rate * time_window)
         self.freq_domain = np.fft.rfftfreq(self.num_points, 1/sample_rate)
         self.time_deques = [deque(np.zeros(self.num_points), maxlen=self.num_points) for _ in range(num_channels)]
         self.title = title # ensure title has format "base title : X Axis"
         self.blitting = blitting
-        self.lines = [self.ax.plot(self.freq_domain, np.zeros(self.freq_domain.size), label=f"Ch {i+1}")[0] for i in range(num_channels)]
-        
-        self.ax.set_title(title)
+     
+    
+    def add_axis(self, ax):
+        self.ax = ax
+        self.lines = [self.ax.plot(self.freq_domain, np.zeros(self.freq_domain.size), label=f"Ch {i+1}")[0] for i in range(len(self.time_deques))]
+        self.ax.set_title(self.title)
         if self.blitting:
             self.ax.set_ylim(0, 2000) # Required for efficient blitting
         self.ax.grid(True)
+    
+
 
     def update(self, data):
         if data is None: return self.lines
@@ -144,20 +167,13 @@ class PrincipleComponentDomain(DynamicDisplay):
     Useful for visualizing correlations between two sensors.
     """
 
-    def __init__(self, ax, title="", num_points: int = 1000, blitting: bool = True):
+    def __init__(self, ax: plt.Axes = None, title="", num_points: int = 1000, blitting: bool = False): # type: ignore
 
         self.ax = ax
         self.title = title
         self.num_points = num_points
         self.blitting = blitting
-        self.lines = [self.ax.plot(np.zeros(self.num_points), np.zeros(self.num_points), label="PCA")[0]]
-        self.ax.set_title(title)
-
-        if self.blitting:
-            self.ax.set_xlim(-8000, 8000)
-            self.ax.set_ylim(-8000, 8000)
-
-        self.ax.grid(True)
+        
 
         self.ch1_deque = deque((np.zeros(self.num_points)), maxlen=self.num_points)
         self.ch2_deque = deque((np.zeros(self.num_points)), maxlen=self.num_points)
@@ -178,6 +194,25 @@ class PrincipleComponentDomain(DynamicDisplay):
             
         return self.lines
 
+    def update_title_axis(self, axis):
+        base_title, _ = self.title.split(" : ")
+        self.ax.set_title(f"{base_title} : {axis.upper()} Axis")
+    
+    def add_axis(self, ax):
+        self.ax = ax 
+
+        self.lines = [self.ax.plot(np.zeros(self.num_points), np.zeros(self.num_points), label="PCA", marker="o", linestyle="")[0]]
+        self.ax.set_title(self.title)
+
+        if self.blitting:
+            self.ax.set_xlim(-8000, 8000)
+            self.ax.set_ylim(-8000, 8000)
+
+        self.ax.grid(True)
+    
+
+    def set_blitting(self, blitting: bool):
+        self.blitting = blitting
 
 class DisplayManager():
     """
@@ -188,41 +223,63 @@ class DisplayManager():
     def __init__(self, blitting: bool = False):
         self.blitting = blitting
         self.data_generator = None
-        
-        # Recording state
-        self.writer = None
-        self.recording_state = "IDLE"
-        self.recording_filename = "recording.mp4"
+        self.plots: list[DynamicDisplay] = []
+        self.plot_info: list[tuple[DynamicDisplay, tuple[int, int]]] = []
+
         
     def add_master_stream(self, data_generator):
         self.data_generator = data_generator
     
     def set_blitting(self, blitting: bool):
         self.blitting = blitting
-        
-    def start_recording(self, filename: str):
-        self.recording_filename = filename
-        self.recording_state = "START"
-    
-    def stop_recording(self):
-        if self.recording_state == "RECORDING":
-            self.recording_state = "STOP"
+
+    def add_plot(self, plot: DynamicDisplay, row: int = 0, col: int = 0):
+        self.plot_info.append((plot, (row, col)))
+        self.plots.append(plot)
+
+
 
     def start(self):
 
         if self.data_generator is None:
             raise ValueError("Data generator not set. Use add_master_stream() to set it before starting the display.")
         
-        # Create a 2x2 grid in ONE window
-        self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 8))
+        
+        num_plots = len(self.plots)
+        
+        # Calculate grid size automatically (2 rows, N columns)
+        rows = 2
+        cols = max(1, num_plots // rows)
+
+        self.fig, self.axes = plt.subplots(rows, cols, figsize=(12, 8)) # creates subplot grid based on number of plots, assumes even number of plots for simplicity and 2 rows (raw, filtered)
+        
+        # Ensure axes is always addressable as 2D array even if 1x1 or 1xN
+        if num_plots == 1: self.axes = np.array([[self.axes]])
+        elif rows == 1 or cols == 1: self.axes = self.axes.reshape(rows, cols)
+
+        # add the axes to the corresponding plot objects
+        for i, plot in enumerate(self.plots):
+            # Automatically assign axis based on order of addition: Row 0 then Row 1
+            r = i // cols
+            c = i % cols
+            if r < rows and c < cols:
+                plot.add_axis(self.axes[r, c])
+                
+            # Sync blitting setting
+            
+            plot.set_blitting(self.blitting)
+
 
         # Initialize the sub-managers with specific axes
-        self.plots: list[DynamicDisplay] = [
-            TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis", blitting=self.blitting),
-            FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis", blitting=self.blitting),
-            TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis", blitting=self.blitting),
-            FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain : X Axis", blitting=self.blitting)
-        ]
+        # self.plots: list[DynamicDisplay] = [
+        #     TimeDomain(self.axes[0, 0], title="Raw Time Domain : X Axis", blitting=self.blitting),
+        #     FrequencyDomain(self.axes[0, 1], title="Raw Frequency Domain : X Axis", blitting=self.blitting),
+        #     PrincipleComponentDomain(self.axes[0, 2], title="Raw PCA : X Axis", blitting=self.blitting),
+
+        #     TimeDomain(self.axes[1, 0], title="Filtered Time Domain : X Axis", blitting=self.blitting),
+        #     FrequencyDomain(self.axes[1, 1], title="Filtered Frequency Domain : X Axis", blitting=self.blitting),
+        #     PrincipleComponentDomain(self.axes[1, 2], title="Filtered PCA : X Axis", blitting=self.blitting),
+        # ]
         
         self.fig.tight_layout()
         
@@ -235,47 +292,21 @@ class DisplayManager():
     def _main_update(self, frame):
         if frame is None: return [line for p in self.plots for line in p.lines]
         
-        # Handle Recording State Machine
-        if self.recording_state == "START":
-            try:
-                if self.recording_filename.endswith(".gif"):
-                    self.writer = PillowWriter(fps=20)
-                else:
-                    if shutil.which("ffmpeg") is None:
-                        raise FileNotFoundError("FFmpeg is not installed or not in PATH. Install FFmpeg or use .gif extension.")
-                    self.writer = FFMpegWriter(fps=20)
-                
-                self.writer.setup(self.fig, self.recording_filename, dpi=100)
-                self.recording_state = "RECORDING"
-                print(f"Recording started: {self.recording_filename}")
-            except Exception as e:
-                print(f"Failed to start recording: {e}")
-                self.recording_state = "IDLE"
-        
-        elif self.recording_state == "RECORDING":
-            self.writer.grab_frame() # type: ignore # if in recording mode writer is initialized
-        
-        elif self.recording_state == "STOP":
-            if self.writer:
-                self.writer.finish()
-                self.writer = None
-                print(f"Recording saved: {self.recording_filename}")
-            self.recording_state = "IDLE"
-
-
-
         raw_data, filt_data = frame # We expect the generator to yield a tuple
         
         # Update each plot logic
         all_lines = []
-        all_lines.extend(self.plots[0].update(raw_data)) # update returns the updated lines and uses the data to update axis 
-        all_lines.extend(self.plots[1].update(raw_data))
-        all_lines.extend(self.plots[2].update(filt_data))
-        all_lines.extend(self.plots[3].update(filt_data))
+        
+        # Dynamically update plots based on the number of registered displays
+        # Assumes the first half are Raw (use raw_data) and the second half are Filtered (use filt_data)
+        midpoint = len(self.plots) // 2
+        for i, plot in enumerate(self.plots):
+            data_source = raw_data if i < midpoint else filt_data
+            all_lines.extend(plot.update(data_source))
         
         return all_lines
     
-    def change_title_axes(self, axis: Literal["x", "y", "z"]):
+    def change_title_axes(self, axis: Literal["x", "y", "z", "mag"]):
         
         for plot in self.plots:
             plot.update_title_axis(axis)

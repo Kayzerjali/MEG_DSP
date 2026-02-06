@@ -92,7 +92,6 @@ class MockSignal(DataSource):
 
     def close(self):
         self.stop_event.set()
-        self.Task = None
         if self.thread:
             self.thread.join(timeout=0.1)
 
@@ -107,13 +106,14 @@ class NIDAQ(DataSource):
         self.set_axis(axis) # set_axis initialises the self.task variable with the correct channels and sample rate
         
     
-    def set_axis(self, axis : Literal["x", "y", "z"]):
+    def set_axis(self, axis : Literal["x", "y", "z", "mag"]):
         """
         Sets the self.channels variable according to which axis is chosen. If self.task exists, function will close it and reinitalise self.task with new axis.
     
         :param axis: The axis which the sensor measures from.
-        :type axis: Literal["x", "y", "z"]
+        :type axis: Literal["x", "y", "z", "mag"]
         """
+        self.axis = axis
         # can be called while task is running so have to close current task and reinitalise with new axis
         with self.lock: # lock ensures if axis is changing, data cannot be read
             if self.task:
@@ -126,6 +126,8 @@ class NIDAQ(DataSource):
                 self.channels = ["Dev1/ai1", "Dev1/ai4"]
             elif axis == "z":
                 self.channels = ["Dev1/ai2", "Dev1/ai5"]
+            elif axis == "mag":
+                self.channels = ["Dev1/ai0", "Dev1/ai1", "Dev1/ai2", "Dev1/ai3", "Dev1/ai4", "Dev1/ai5"]
             
             self.task.ai_channels.add_ai_voltage_chan(", ".join(self.channels))
             self.task.timing.cfg_samp_clk_timing(rate = self.sample_rate, sample_mode=AcquisitionType.CONTINUOUS)
@@ -140,6 +142,17 @@ class NIDAQ(DataSource):
         """
         with self.lock:
             data = self.task.read(num_samples)  # type: ignore
+
+            if self.axis == "mag":
+                data = np.array(data)
+                # Reshape to (2 sensors, 3 axes, samples)
+                if data.ndim == 1:
+                    data = data.reshape(2, 3, 1)
+                else:
+                    data = data.reshape(2, 3, -1)
+                
+                # Calculate magnitude (Euclidean norm) along the axis dimension
+                data = np.linalg.norm(data, axis=1) # takes norm along axis dimension, resulting in shape (2, samples)
 
         data = np.array(data)
         data = (data/2.7) * 1000 # voltage to pT conversion (assuming 2.7 V/nT)
@@ -164,4 +177,7 @@ class NIDAQ(DataSource):
 
             
     def close(self):
-        self.task.close() # type: ignore 
+        with self.lock:
+            if self.task:
+                self.task.close() # type: ignore 
+                self.task = None

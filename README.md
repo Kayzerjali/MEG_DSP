@@ -15,5 +15,10 @@ raw time domain graph sometimes I cant find the signal (looks like no signal on 
 be able to start recording to save animation, and stop
 On y axis I turned on signal but couldnt see it in the filtered but saw it in raw
 
-remove filter not working
 set_axis_limits still not working
+Kpca not working
+
+
+ipca filtering only seems to work when there is a decent sensor correlation (y=mx)
+something crashed when I was on axis mag and switched to axis x but couldnt replicate with tests
+

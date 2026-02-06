@@ -20,7 +20,7 @@ class DSPShell(Cmd):
         Example: axis x
         """
 
-        if arg in ["x", "y", "z"]:
+        if arg in ["x", "y", "z", "mag"]:
             try:
                 # Change data source
                 self._container.get_instance("data_source").set_axis(arg)
@@ -43,15 +43,15 @@ class DSPShell(Cmd):
         Example: bp_filt 50 250 5
     
         """
-        if self._container.get_instance("bp_filt") is None:
-            print("Bandpass filter not initialized. Use 'add_filter bp_filt' to add it first.")
+        if self._container.get_instance("bp") is None:
+            print("Bandpass filter not initialized. Use 'add_filter bp' to add it first.")
             return
 
         if len(arg.split()) == 3:
             try:
                 lowcut, highcut, order = arg.split()
 
-                self._container.get_instance("bp_filt").change_filt_coeffs(float(lowcut), float(highcut), int(order))
+                self._container.get_instance("bp").change_filt_coeffs(float(lowcut), float(highcut), int(order))
 
             except Exception as e:
                 print(f"Error changing filter coefficients: {e}")
@@ -61,7 +61,7 @@ class DSPShell(Cmd):
 
     def do_remove_filt(self, arg):
         """
-        Removes a filter from the filter manager.
+        Removes a filter from the filter manager. Use 'all' to remove all filters.
         Usage: remove_filt filter_name
         Example: remove_filt bp_filt
         """
