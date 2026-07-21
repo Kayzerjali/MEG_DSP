@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import deque
 import numpy as np
+import threading
 from typing import Literal
 
 
@@ -229,7 +230,11 @@ class DisplayManager():
         self.data_generator = None
         self.plots: list[DynamicDisplay] = []
 
-        
+        # Work queued by the CLI thread to be run on the GUI thread. See _run_on_gui_thread().
+        self._pending_ops = []
+        self._pending_lock = threading.Lock()
+
+
     def add_master_stream(self, data_generator):
         self.data_generator = data_generator
     
@@ -279,7 +284,36 @@ class DisplayManager():
 
 
 
+    def _run_on_gui_thread(self, op):
+        """
+        Queues op() to be run just before the next animation frame is drawn.
+
+        The CLI runs in its own thread, but matplotlib figures may only be touched from
+        the thread running the GUI event loop (the main thread). Commands that change
+        the figure therefore queue the change here instead of applying it themselves,
+        and _main_update() runs it. The change lands on the next frame, i.e. within the
+        animation interval of 50 ms.
+
+        :param op: a zero-argument callable that mutates the figure.
+        """
+        with self._pending_lock:
+            self._pending_ops.append(op)
+
+    def _apply_pending_ops(self):
+        """Runs everything queued by _run_on_gui_thread(). Must only be called on the GUI thread."""
+        with self._pending_lock:
+            ops, self._pending_ops = self._pending_ops, []
+
+        for op in ops:
+            try:
+                op()
+            except Exception as e:
+                # Never let a bad command take the animation down with it
+                print(f"Error updating display: {e}")
+
     def _main_update(self, frame):
+        self._apply_pending_ops()
+
         if frame is None: return [line for p in self.plots for line in p.lines]
         
         raw_data, filt_data = frame # We expect the generator to yield a tuple
@@ -296,39 +330,58 @@ class DisplayManager():
         
         return all_lines
     
-    def change_title_axes(self, axis: Literal["x", "y", "z", "mag"]):
-        
-        for plot in self.plots:
-            plot.update_title_axis(axis)
-            
-        self.fig.canvas.draw_idle() # to force a redraw dispite blitting
+    def _is_valid_plot(self, row: int, col: int) -> bool:
+        """Checks (row, col) against the grid that start() actually built."""
+        rows, cols = self.axes.shape
+        return 0 <= row < rows and 0 <= col < cols
 
-    def set_axis_limits(self, plot: tuple[int, int], limits: tuple[float, float]):
+    def change_title_axes(self, axis: Literal["x", "y", "z", "mag"]):
+
+        def op():
+            for plot in self.plots:
+                plot.update_title_axis(axis)
+
+            self.fig.canvas.draw_idle() # to force a redraw dispite blitting
+
+        self._run_on_gui_thread(op)
+
+    def set_axis_limits(self, plot: tuple[int, int], limits: tuple[float, float]) -> bool:
         """
         Sets the y-axis limits for a specific plot.
         :param plot: tuple of (row, col) indices for the subplot
         :param limits: (ymin, ymax)
+        :return: True if the plot index was valid, False otherwise
         """
         row, col = plot
-        if 0 <= row <= 2 and 0 <= col <= 2:
-            ax = self.axes[row, col]
-            try:
-                ax.set_ylim(limits)
-                self.fig.canvas.draw_idle()
-            except Exception as e:
-                print(f"Error setting axis limits: {e}")
-        else:
+        if not self._is_valid_plot(row, col):
             print(f"Invalid plot index: {plot}")
-    
-    def set_auto_scale(self, plot: tuple[int, int]):
+            return False
+
+        ax = self.axes[row, col]
+
+        def op():
+            ax.set_ylim(limits)
+            self.fig.canvas.draw_idle()
+
+        self._run_on_gui_thread(op)
+        return True
+
+    def set_auto_scale(self, plot: tuple[int, int]) -> bool:
         """
         Sets the y-axis to auto-scale for a specific plot.
         :param plot: tuple of (row, col) indices for the subplot
+        :return: True if the plot index was valid, False otherwise
         """
         row, col = plot
-        if 0 <= row < 2 and 0 <= col < 2:
-            ax = self.axes[row, col]
+        if not self._is_valid_plot(row, col):
+            print(f"Invalid plot index: {plot}")
+            return False
+
+        ax = self.axes[row, col]
+
+        def op():
             ax.set_autoscaley_on(True)
             self.fig.canvas.draw_idle()
-        else:
-            print(f"Invalid plot index: {plot}")
+
+        self._run_on_gui_thread(op)
+        return True

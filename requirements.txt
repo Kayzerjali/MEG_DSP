@@ -1,0 +1,30 @@
+# Libraries this program needs.
+#
+# Install them all at once by running this in a terminal, from the folder
+# that contains this file:
+#
+#     pip install -r requirements.txt
+#
+# See README.md section 4 if that command doesn't work.
+
+# Maths and array handling. Used everywhere.
+numpy>=1.24
+
+# Signal processing. Provides the bandpass and notch filter designs.
+scipy>=1.10
+
+# The live graphs.
+matplotlib>=3.7
+
+# The PCA / IncrementalPCA / KernelPCA / SparsePCA filters.
+scikit-learn>=1.3
+
+# Talks to the National Instruments DAQ hardware.
+#
+# This is REQUIRED even if you have no hardware -- the program imports it at
+# startup no matter what, and falls back to a simulated signal if no device
+# is found. It installs fine on any computer.
+#
+# NOTE: this package alone is not enough to read from real hardware. For that
+# you also need NI's separate NI-DAQmx driver software. See README.md section 9.
+nidaqmx>=0.9

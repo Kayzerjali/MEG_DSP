@@ -12,11 +12,29 @@ class DSPShell(Cmd):
     def __init__(self, container: Container):
         super().__init__()
         self._container = container
-    
+
+    def onecmd(self, line):
+        """
+        Runs one command, reporting any unexpected error instead of propagating it.
+
+        The shell runs in its own thread (see dsp.py). An exception escaping a do_*
+        method would escape cmdloop() and kill that thread, which leaves the graphs
+        running but the prompt dead and unable to accept anything. Catching here keeps
+        the prompt alive whatever a single command does.
+        """
+        try:
+            return super().onecmd(line)
+        except Exception as e:
+            print(f"Command failed: {e}")
+            print("(The prompt is still running, you can keep typing.)")
+            return False
+
+
     def do_axis(self, arg):
         """
         Changes the data source axis being read.
-        Usage: axis x|y|z
+        'mag' combines all three axes into a single overall field strength.
+        Usage: axis x|y|z|mag
         Example: axis x
         """
 
@@ -39,19 +57,29 @@ class DSPShell(Cmd):
     def do_bp_filt(self, arg):
         """
         Changes the characteristics (lowcut, highcut, order) of the bandpass filter.
+        Frequencies are in Hz. Order controls the steepness of the cutoff.
+
+        You must run 'add_filt bp' before using this command.
+
         Usage: bp_filt lowcut highcut order
         Example: bp_filt 50 250 5
-    
+
         """
-        if self._container.get_instance("bp") is None:
-            print("Bandpass filter not initialized. Use 'add_filter bp' to add it first.")
+        try:
+            # get_instance raises if bp has never been added, it does not return None
+            bp_filter = self._container.get_instance("bp")
+        except Exception:
+            bp_filter = None
+
+        if bp_filter is None:
+            print("Bandpass filter not initialized. Use 'add_filt bp' to add it first.")
             return
 
         if len(arg.split()) == 3:
             try:
                 lowcut, highcut, order = arg.split()
 
-                self._container.get_instance("bp").change_filt_coeffs(float(lowcut), float(highcut), int(order))
+                bp_filter.change_filt_coeffs(float(lowcut), float(highcut), int(order))
 
             except Exception as e:
                 print(f"Error changing filter coefficients: {e}")
@@ -63,7 +91,8 @@ class DSPShell(Cmd):
         """
         Removes a filter from the filter manager. Use 'all' to remove all filters.
         Usage: remove_filt filter_name
-        Example: remove_filt bp_filt
+        Example: remove_filt bp
+                 remove_filt all
         """
         try:
             filter_manager: Filter.FilterManager = self._container.get_instance("filter_manager")
@@ -77,13 +106,13 @@ class DSPShell(Cmd):
 
     def do_list_current_filters(self, arg):
         """
-        Lists all currently applied filters in the filter manager.
-        Usage: list_filters
-        Example: list_filters
+        Lists the filters that are switched on right now, in the order they are applied.
+        Usage: list_current_filters
+        Example: list_current_filters
         Output:
         Currently applied filters:
-        - bp_filt
-        - pca_filt
+        - notch
+        - bp
         """
         try:
             filter_manager = self._container.get_instance("filter_manager")
@@ -101,13 +130,14 @@ class DSPShell(Cmd):
 
     def do_list_registered_filters(self, arg):
         """
-        Lists all available filters in the container.
+        Lists every filter you are allowed to add with 'add_filt'.
         Usage: list_registered_filters
         Example: list_registered_filters
         Output:
         Available filters:
-        - bp_filt
-        - pca_filt
+        - bp
+        - notch
+        - pca
         """
         try:
             filters: list[str] = self._container.list_registered_filters()
@@ -124,9 +154,11 @@ class DSPShell(Cmd):
 
     def do_add_filt(self, arg):
         """
-        Adds a filter to the filter manager. Filter must be registered in the container. To see available filters use 'list_registered_filters'.
+        Adds a filter to the filter manager. Filter must be registered in the container.
+        To see available filters use 'list_registered_filters'.
+        Filters are applied in the order you add them.
         Usage: add_filt filter_name
-        Example: add_filt bp_filt
+        Example: add_filt notch
         """
         try:
             filter_manager: Filter.FilterManager = self._container.get_instance("filter_manager")
@@ -140,6 +172,12 @@ class DSPShell(Cmd):
     def do_recording(self, arg):
         """
         Controls the recording of the animation.
+
+        *** NOT IMPLEMENTED ***
+        Saving the animation to a video file was never finished, so this command
+        reports that and does nothing. To save a picture of the graphs, use the save
+        icon in the graph window toolbar.
+
         Usage: recording start [filename] | stop
         Example: recording start my_signal.mp4
                  recording stop
@@ -154,17 +192,32 @@ class DSPShell(Cmd):
 
         if command == "start":
             filename = args[1] if len(args) > 1 else "recording.mp4"
-            display_manager.start_recording(filename)
+            start_recording = getattr(display_manager, "start_recording", None)
+            if start_recording is None:
+                self._print_recording_unimplemented()
+                return
+            start_recording(filename)
         elif command == "stop":
-            display_manager.stop_recording()
+            stop_recording = getattr(display_manager, "stop_recording", None)
+            if stop_recording is None:
+                self._print_recording_unimplemented()
+                return
+            stop_recording()
         else:
             print("Unknown command. Use 'start' or 'stop'.")
+
+    def _print_recording_unimplemented(self):
+        print("Recording is not implemented in this version, so nothing was recorded.")
+        print("To save a picture of the graphs, use the save icon in the graph window toolbar.")
     
     def do_set_axis_limits(self, arg):
         """
-        Sets the y-axis limits for the a specific subplot.
-        Usage: set_axis_limits (row, col) ymin ymax
-        Example: set_axis_limits (2, 2) -2000 2000
+        Sets the y-axis limits for a specific subplot, stopping it from auto-rescaling.
+        Counting starts at zero: row 0 is the raw (top) row, row 1 is the filtered
+        (bottom) row; columns are 0, 1, 2 from left to right.
+        Do not put a space inside the brackets.
+        Usage: set_axis_limits (row,col) ymin ymax
+        Example: set_axis_limits (1,0) -2000 2000
         """
         args = arg.split()
         if len(args) != 3:
@@ -177,8 +230,8 @@ class DSPShell(Cmd):
             ymin = float(args[1])
             ymax = float(args[2])
             display_manager: Display.DisplayManager = self._container.get_instance("display_manager")
-            display_manager.set_axis_limits((row, col), (ymin, ymax))
-            print(f"Y-axis limits set to [{ymin}, {ymax}] for subplot ({row}, {col})")
+            if display_manager.set_axis_limits((row, col), (ymin, ymax)):
+                print(f"Y-axis limits set to [{ymin}, {ymax}] for subplot ({row}, {col})")
         except ValueError:
             print("Invalid limits. Please provide numeric values.")
         except Exception as e:
@@ -186,9 +239,12 @@ class DSPShell(Cmd):
 
     def do_set_auto_scale(self, arg):
         """
-        Sets the y-axis to auto-scale for the display.
-        Usage: set_auto_scale (row, col)
-        Example: set_auto_scale (2, 2)
+        Undoes set_axis_limits, letting a subplot rescale itself again.
+        Counting starts at zero, as for set_axis_limits.
+        Do not put a space inside the brackets.
+
+        Usage: set_auto_scale (row,col)
+        Example: set_auto_scale (1,0)
         """
         args = arg.split()
         if len(args) != 1:
@@ -197,13 +253,18 @@ class DSPShell(Cmd):
         try:
             row, col = map(int, args[0][1:-1].split(","))
             display_manager: Display.DisplayManager = self._container.get_instance("display_manager")
-            display_manager.set_auto_scale((row, col))
-            print(f"Y-axis auto-scaling enabled for subplot ({row}, {col})")
+            if display_manager.set_auto_scale((row, col)):
+                print(f"Y-axis auto-scaling enabled for subplot ({row}, {col})")
         except Exception as e:
             print(f"Error setting auto scale: {e}")
         
 
 
     def do_quit(self, arg):
+        """
+        Closes the program and shuts down the data source cleanly.
+        Usage: quit
+        Example: quit
+        """
         return True
     
