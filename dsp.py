@@ -5,17 +5,21 @@ import Shell
 import matplotlib.pyplot as plt
 import threading
 from Container import Container
+import argparse
 import traceback
 
 
 
-def main():
+def main(mock: bool = False):
 
     try:
         # Register all objects in container
 
         container = Container()
-        container.register("data_source", lambda: DataSource.NIDAQ())
+        if mock:
+            container.register("data_source", lambda: DataSource.MockSignal())
+        else:
+            container.register("data_source", lambda: DataSource.NIDAQ())
 
         # Register Filters
         container.register_filter("bp", lambda: Filter.BandPass())
@@ -81,4 +85,9 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+    parser = argparse.ArgumentParser(description="MEG DSP pipeline")
+    parser.add_argument("--mock", action="store_true",
+                        help="use a simulated signal instead of the NIDAQ hardware (no nidaqmx driver required)")
+    args = parser.parse_args()
+
+    main(mock=args.mock)

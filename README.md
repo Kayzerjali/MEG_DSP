@@ -127,8 +127,9 @@ If you see something else, you're in the wrong folder — go back to step 1.
 The program needs five libraries: **numpy** and **scipy** (maths), **matplotlib** (graphs),
 **scikit-learn** (the PCA filters), and **nidaqmx** (talking to the sensor hardware).
 
-`nidaqmx` is required **even if you have no hardware** — the program imports it at startup
-regardless. It installs fine on any computer, so just install all five.
+`nidaqmx` is **optional** — it's only needed for real hardware. If you don't have it, run the
+program with `--mock` (see section 5) and it works on the simulated signal. It does install
+fine on any computer, though, so the simplest thing is to install all five and forget about it.
 
 ### Recommended: use a virtual environment
 
@@ -214,6 +215,22 @@ Switching to MockSignal for simulation.
 ```
 
 That means it's running on the built-in fake signal. Everything works normally.
+
+### Running on the simulated signal deliberately — `--mock`
+
+```powershell
+python dsp.py --mock
+```
+
+This skips the hardware entirely and goes straight to the built-in fake signal. Use it when:
+
+- you haven't installed the `nidaqmx` library, or the NI-DAQmx driver, or either;
+- you have hardware attached but want to demo or test without it;
+- you want to skip the few seconds the program spends trying to find a device.
+
+Without the flag the program still tries the real hardware first and falls back to the fake
+signal on its own, so `--mock` is a convenience, not a requirement. The graphs, filters and
+every `dsp:` command behave identically either way.
 
 **To stop the program:** type `quit` and press Enter, or just close the graph window. If it
 gets stuck, click on the terminal and press **Ctrl+C**.
@@ -412,7 +429,8 @@ You can check the real name in NI MAX, the utility that ships with the driver.
   scaled incorrectly. It's in `get_data`.
 
 **Confirming it's using real data:** if you don't see the `Switching to MockSignal` warning at
-startup, you're on real hardware.
+startup, you're on real hardware. Also check you didn't start the program with `--mock`, which
+skips the hardware on purpose.
 
 ---
 
@@ -428,11 +446,14 @@ instead — Windows sometimes installs it under the name `py`.
 **`can't open file '...dsp.py': [Errno 2] No such file or directory`**
 Your terminal is in the wrong folder. Redo section 3, and check that `ls` shows `dsp.py`.
 
-**`ModuleNotFoundError: No module named 'numpy'`** (or `scipy`, `sklearn`, `matplotlib`,
-`nidaqmx`)
+**`ModuleNotFoundError: No module named 'numpy'`** (or `scipy`, `sklearn`, `matplotlib`)
 The libraries aren't installed, or your virtual environment isn't switched on. Check that
 your prompt starts with `(venv)`. If it doesn't, run `.\venv\Scripts\Activate.ps1` again. If
 it does, run `pip install -r requirements.txt` again.
+
+**`ModuleNotFoundError: No module named 'nidaqmx'`**
+This one no longer stops the program — `nidaqmx` is optional. If you see it, you're on an old
+copy of the code; update it, or run `python dsp.py --mock`.
 
 **`Activate.ps1 cannot be loaded because running scripts is disabled on this system`**
 Run `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`, then try again.

@@ -21,9 +21,8 @@ scikit-learn>=1.3
 
 # Talks to the National Instruments DAQ hardware.
 #
-# This is REQUIRED even if you have no hardware -- the program imports it at
-# startup no matter what, and falls back to a simulated signal if no device
-# is found. It installs fine on any computer.
+# OPTIONAL. If it is missing, the program still starts -- run it with --mock to
+# use a simulated signal instead. You only need this to read real hardware.
 #
 # NOTE: this package alone is not enough to read from real hardware. For that
 # you also need NI's separate NI-DAQmx driver software. See README.md section 9.

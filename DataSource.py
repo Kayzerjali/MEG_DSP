@@ -1,5 +1,10 @@
-import nidaqmx
-from nidaqmx.constants import AcquisitionType
+try:
+    import nidaqmx
+    from nidaqmx.constants import AcquisitionType
+except ImportError: # driver not installed, mock sources are still usable
+    nidaqmx = None
+    AcquisitionType = None
+
 from typing import Literal
 import numpy as np
 import time
@@ -110,7 +115,10 @@ class MockSignal(DataSource):
 class NIDAQ(DataSource):
 
     def __init__(self, sample_rate : int = 1000, axis : Literal["x", "y", "z"] = "x"):
-        
+
+        if nidaqmx is None:
+            raise ImportError("nidaqmx is not installed, run with --mock to use a simulated signal")
+
         self.task = None
         self.sample_rate = sample_rate
         self.lock = threading.Lock()
